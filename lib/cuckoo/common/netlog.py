@@ -87,6 +87,7 @@ class BsonParser(object):
         self.pid = None
         self.is_64bit = False
         self.buffer_sha1 = None
+        self.known_buffers = []
 
         if not HAVE_BSON:
             log.critical("Starting BsonParser, but bson is not available! (install with `pip install bson`)")
@@ -201,6 +202,12 @@ class BsonParser(object):
 
             # Handle dumped buffers.
             if mtype == "buffer":
+                
+                ## buffer meta-data
+                pid  = dec.get('p')
+                addr = dec.get('a')
+                size = dec.get('s')
+
                 buf = dec.get("buffer")
                 sha1 = dec.get("checksum")
                 self.buffer_sha1 = hashlib.sha1(buf).hexdigest()
@@ -208,18 +215,20 @@ class BsonParser(object):
                 # Why do we pass along a sha1 checksum again?
                 if sha1 != self.buffer_sha1:
                     log.warning("Incorrect sha1 passed along for a buffer.")
-
+                sha1 = self.buffer_sha1
                 # If the parent is netlogs ResultHandler then we actually dump
                 # it - this should only be the case during the analysis, any
                 # after processing will then be ignored.
                 from lib.cuckoo.core.resultserver import ResultHandler
 
-                if isinstance(self.fd, ResultHandler):
+                if isinstance(self.fd, ResultHandler) and sha1 not in self.known_buffers:
                     filepath = os.path.join(self.fd.storagepath,
-                                            "buffer", self.buffer_sha1)
+                                            "buffer", "{0}.{1:x}.{2}_{3}".format(
+                                                pid,addr,size,sha1)
+                    )
                     with open(filepath, "wb") as f:
                         f.write(buf)
-
+                    self.known_buffers.append(sha1)
                 continue
 
             tid = dec.get("T", 0)
